@@ -3,7 +3,7 @@
 # also make sure to install the local packages with the "-e" prefix
 # to create an environment: conda create env -f environment.yaml
 # to update: conda env update -f environment.yaml
-name: dummy-environment
+name: click-grasp
 channels:
   - pytorch
   - conda-forge
@@ -25,4 +25,9 @@ dependencies:
     - timm
     - pytest
     - pre-commit
+    - ur_rtde
+    - git+https://github.com/tlpss/camera-toolkit.git
+    - git+https://github.com/airo-ugent/robotiq2F_tcp.git
+    - git+https://github.com/tlpss/keypoint-detection.git
     - -e package/
+    # -e 'git+https://github.com/airo-ugent/airo-core@camera-toolkit#egg=<package-dir>&subdirectory=<package-dir>'[external]
