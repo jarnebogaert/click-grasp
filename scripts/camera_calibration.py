@@ -1,19 +1,68 @@
 import pickle
 import time
 from pathlib import Path
-
+from typing import Tuple 
 import cv2
 import numpy as np
+from airo_camera_toolkit.cameras.zed2i import Zed2i
+from airo_camera_toolkit.utils import ImageConverter
+from airo_camera_toolkit.reprojection import project_frame_to_image_plane
 import pyzed.sl as sl
-from camera_toolkit.aruco import get_aruco_marker_poses
-from camera_toolkit.reproject import project_world_to_image_plane
-from camera_toolkit.zed2i import Zed2i
 
+def get_aruco_marker_poses(
+        frame: np.ndarray,
+        cam_matrix: np.ndarray,
+        aruco_marker_size: float,
+        aruco_dictionary_name: str,
+        visualize: bool = False,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    this_aruco_dictionary = cv2.aruco.Dictionary_get(aruco_dictionary_name)
+    this_aruco_parameters = cv2.aruco.DetectorParameters_create()
 
-class CameraMapping:
-    serial_tripod = 38633712
-    serial_side = 35357320
-    serial_top = 31733653
+    # Detect ArUco markers in the video frame
+    (corners, marker_ids, rejected) = cv2.aruco.detectMarkers(
+        frame, this_aruco_dictionary, parameters=this_aruco_parameters
+    )
+
+    # Check that at least one ArUco marker was detected
+    if marker_ids is None:
+        return frame, None, None, None
+
+    # Refine the corners
+    # cv2.aruco.refineDetectedMarkers(frame, board, corners, marker_ids, rejected)
+    termination_criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_COUNT, 100, 0.001) # max 100 iterations or 0.001m acc
+    search_window_size = (5, 5)  # multiply by 2 + 1 to get real search window size opencv will use (5x5) = (11x11) window
+    zero_zone = (-1, -1)  # none
+    corners = cv2.cornerSubPix(frame[:,:,0], corners[0], search_window_size, zero_zone, termination_criteria)
+
+    # Get the rotation and translation vectors
+    rvecs, tvecs, obj_points = cv2.aruco.estimatePoseSingleMarkers(corners, aruco_marker_size, cam_matrix, np.zeros(4))
+
+    # The pose of the marker is with respect to the camera lens frame.
+    # Imagine you are looking through the camera viewfinder,
+    # the camera lens frame's:
+    # x-axis points to the right
+    # y-axis points straight down towards your toes
+    # z-axis points straight ahead away from your eye, out of the camera
+    translations = []
+    rotation_matrices = []
+
+    if marker_ids.size == rvecs.shape[0]:
+        for i, marker_id in enumerate(marker_ids):
+            # Store the rotation information
+            rotation_matrix = cv2.Rodrigues(np.array(rvecs[i][0]))[0]
+
+            translations.append(tvecs[i][0])
+            rotation_matrices.append(rotation_matrix)
+
+    else:
+        print("[WARNING] detected markers does not equal amount of rotation vectors weirdly")
+    if visualize:
+        frame = np.ascontiguousarray(frame)
+        # Draw the axes on the marker
+        for i in range(len(marker_ids)):
+            cv2.drawFrameAxes(frame, cam_matrix, np.zeros(4), rvecs[i], tvecs[i], 0.05)
+    return frame, translations, rotation_matrices, marker_ids
 
 
 def draw_center_circle(image) -> np.ndarray:
@@ -26,20 +75,22 @@ def draw_center_circle(image) -> np.ndarray:
 
 
 def draw_world_axes(image, world_to_camera, camera_matrix):
-    origin = project_world_to_image_plane(np.zeros(3), world_to_camera, camera_matrix).astype(int)
-    image = cv2.circle(image, origin.T, 10, (0, 255, 255), thickness=2)
+    project_points = np.array([
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [-1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, -1.0, 0.0],
+        [0.0, 0.0, 1.0]
+    ])
 
-    x_pos = project_world_to_image_plane([1.0, 0.0, 0.0], world_to_camera, camera_matrix).astype(int)
-    x_neg = project_world_to_image_plane([-1.0, 0.0, 0.0], world_to_camera, camera_matrix).astype(int)
-    y_pos = project_world_to_image_plane([0.0, 1.0, 0.0], world_to_camera, camera_matrix).astype(int)
-    y_neg = project_world_to_image_plane([0.0, -1.0, 0.0], world_to_camera, camera_matrix).astype(int)
-    image = cv2.line(image, x_pos.T, origin.T, color=(0, 0, 255), thickness=2)
-    image = cv2.line(image, x_neg.T, origin.T, color=(100, 100, 255), thickness=2)
-    image = cv2.line(image, y_pos.T, origin.T, color=(0, 255, 0), thickness=2)
-    image = cv2.line(image, y_neg.T, origin.T, color=(150, 255, 150), thickness=2)
-
-    z_pos = project_world_to_image_plane([0.0, 0.0, 1.0], world_to_camera, camera_matrix).astype(int)
-    image = cv2.line(image, z_pos.T, origin.T, color=(255, 0, 0), thickness=2)
+    origin, x_pos, x_neg, y_pos, y_neg, z_pos = project_frame_to_image_plane(project_points, camera_matrix, world_to_camera).astype(int)
+    image = cv2.circle(image, origin, 10, (0, 255, 255), thickness=2)
+    image = cv2.line(image, x_pos, origin, color=(0, 0, 255), thickness=2)
+    image = cv2.line(image, x_neg, origin, color=(100, 100, 255), thickness=2)
+    image = cv2.line(image, y_pos, origin, color=(0, 255, 0), thickness=2)
+    image = cv2.line(image, y_neg, origin, color=(150, 255, 150), thickness=2)
+    image = cv2.line(image, z_pos, origin, color=(255, 0, 0), thickness=2)
     return image
 
 
@@ -49,8 +100,7 @@ def save_calibration(rotation_matrix, translation):
 
 
 if __name__ == "__main__":
-    resolution = sl.RESOLUTION.HD720
-    zed = Zed2i(resolution=resolution, serial_number=CameraMapping.serial_top, fps=30)
+    zed = Zed2i(resolution=Zed2i.RESOLUTION_720)
 
     # Configure custom project-wide InputTransform based on camera, resolution, etc.
     _, h, w = zed.get_rgb_image().shape
@@ -59,11 +109,12 @@ if __name__ == "__main__":
     while True:
         start_time = time.time()
         image = zed.get_rgb_image()
-        image = zed.image_shape_torch_to_opencv(image)
-        image = image.copy()
-        cam_matrix = zed.get_camera_matrix()
-        image, translations, rotations, _ = get_aruco_marker_poses(
-            image, cam_matrix, 0.106, cv2.aruco.DICT_6X6_250, True
+        image = ImageConverter(image).image_in_opencv_format
+        image = (255 * image).astype(np.uint8)
+
+        intrinsics_matrix = zed.intrinsics_matrix
+        _, translations, rotations, _ = get_aruco_marker_poses(
+           image, intrinsics_matrix, 0.106, cv2.aruco.DICT_6X6_250, True
         )
         image = draw_center_circle(image)
 
@@ -72,8 +123,7 @@ if __name__ == "__main__":
             aruco_in_camera_transform[:3, :3] = rotations[0]
             aruco_in_camera_transform[:3, 3] = translations[0]
             world_to_camera = aruco_in_camera_transform
-            camera_matrix = zed.get_camera_matrix()
-            image = draw_world_axes(image, world_to_camera, camera_matrix)
+            image = draw_world_axes(image, world_to_camera, intrinsics_matrix)
 
         cv2.imshow("Camera feed", image)
 
@@ -84,5 +134,4 @@ if __name__ == "__main__":
             time.sleep(5)
         if key == ord("q"):
             cv2.destroyAllWindows()
-            zed.close()
             break
