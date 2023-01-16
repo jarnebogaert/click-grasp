@@ -5,9 +5,12 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from robotiq2f import Robotiq2F85TCP
 from airo_camera_toolkit.cameras.zed2i import Zed2i
 from airo_camera_toolkit.utils import ImageConverter
+from airo_camera_toolkit.reprojection import reproject_to_frame_z_plane
+from airo_robots.manipulators.hardware.ur_rtde import UR_RTDE,  UR3E_CONFIG
+from airo_robots.grippers.hardware.robotiq_2f85_tcp import Robotiq2F85
+
 # from rtde_control import RTDEControlInterface
 from scipy.spatial.transform import Rotation as R
 import pyzed.sl as sl
@@ -80,28 +83,29 @@ if __name__ == "__main__":
         sys.exit(0)
     world_to_camera = load_saved_calibration()
 
-    # ip_louise = "10.42.0.163"
-    # control_interface = RTDEControlInterface(ip_louise)
-    # gripper = Robotiq2F85TCP(ip_louise)
+    ip_louise = "10.42.0.163"
+    ur3e = UR_RTDE(ip_louise, UR3E_CONFIG)
 
-    # # Move louise home, a bit vertex
-    # louise_in_world = np.identity(4)
-    # louise_in_world[:3, -1] += [0.325, 0, 0]  # roughly measured by hand
-    # world_to_louise = np.linalg.inv(louise_in_world)
+    gripper = Robotiq2F85(ip_louise)
+
+    ur3e_in_world = np.identity(4)
+    ur3e_in_world[:3, -1] += [0.3, 0, 0]  # 30 cm positive along x from where the marker should be placed
+    world_to_ur3e = np.linalg.inv(ur3e_in_world)
     # move_speed = 0.1  # m /s
 
-    # home_louise = louise_in_world.copy()
-    # home_louise[:3, -1] += [-0.15, -0.20, 0.2]
-    # X = np.array([1, 0, 0])
-    # Z = np.array([0, 0, -1])  # topdown
-    # Y = np.cross(Z, X)
-    # top_down = np.column_stack([X, Y, Z])
-    # home_louise[:3, :3] = top_down
-    # home_in_louise = world_to_louise @ home_louise
-    # ur_home_in_louise = homogeneous_pose_to_position_and_rotvec(home_in_louise)
-    # control_interface.moveL(ur_home_in_louise, move_speed)
-    # gripper.activate_gripper()
-    # gripper.open()
+    home_ur3e = ur3e_in_world.copy()
+    home_ur3e[:3, -1] += [-0.15, -0.20, 0.2]
+    X = np.array([1, 0, 0])
+    Z = np.array([0, 0, -1])  # topdown
+    Y = np.cross(Z, X)
+    top_down = np.column_stack([X, Y, Z])
+    home_ur3e[:3, :3] = top_down
+    home_in_ur3e = world_to_ur3e @ home_ur3e
+
+    ur3e.move_linear_to_tcp_pose(home_in_ur3e)
+
+    gripper.activate_gripper()
+    gripper.open()
 
     zed = Zed2i(resolution=Zed2i.RESOLUTION_720, fps=30)
     intrinsics_matrix = zed.intrinsics_matrix
@@ -130,34 +134,32 @@ if __name__ == "__main__":
         image = ImageConverter(image).image_in_opencv_format
         image = draw_clicked_grasp(image, clicked_image_points, current_mouse_point)
 
-        # if len(clicked_image_points) == 2 and not grasp_executed:
-        #     points_in_image = np.array(clicked_image_points)
-        #     points_in_world = reproject_to_world_z_plane(points_in_image, camera_matrix, world_to_camera)
-        #     grasp_pose = make_grasp_pose(points_in_world)
-        #     image = draw_pose(image, grasp_pose, world_to_camera, camera_matrix)
+        draw_pose(image, ur3e_in_world, world_to_camera, intrinsics_matrix)
 
-        #     grasp_pose[2, -1] += 0.005
+        if len(clicked_image_points) == 2:
+            points_in_image = np.array(clicked_image_points)
+            # points_in_world = reproject_to_frame_z_plane(points_in_image, intrinsics_matrix, world_to_camera)
+            points_in_world = reproject_to_frame_z_plane(points_in_image, intrinsics_matrix, np.linalg.inv(world_to_camera))
+        
+            grasp_pose = make_grasp_pose(points_in_world)
+            grasp_pose[2, -1] += 0.005
+            grasp_pose_in_ur3e = world_to_ur3e @ grasp_pose
 
-        #     pregrasp_pose = np.copy(grasp_pose)
-        #     pregrasp_pose[2, -1] += 0.05  # raise grasp height by 10 cm for safety
+            pregrasp_pose = np.copy(grasp_pose)
+            pregrasp_pose[2, -1] += 0.15  # raise grasp height by 15 cm for safety
+            pregrasp_pose_in_ur3e = world_to_ur3e @ pregrasp_pose
 
-        #     # Transform grasp pose to robot frame
-        #     pregrasp_in_louise = world_to_louise @ pregrasp_pose
+            image = draw_pose(image, grasp_pose, world_to_camera, intrinsics_matrix)
+            image = draw_pose(image, pregrasp_pose, world_to_camera, intrinsics_matrix)
 
-        #     # Execute pregrasp
-        #     ur_pregrasp_in_louise = homogeneous_pose_to_position_and_rotvec(pregrasp_in_louise)
-        #     control_interface.moveL(ur_pregrasp_in_louise, move_speed)
+            if not grasp_executed:
+                cv2.imshow(window_name, image) # refresh image
 
-        #     # Execute grasp
-        #     grasp_in_louise = world_to_louise @ grasp_pose
-        #     ur_grasp_in_louise = homogeneous_pose_to_position_and_rotvec(grasp_in_louise)
-        #     control_interface.moveL(ur_grasp_in_louise, move_speed)
-        #     gripper.close()
-
-        #     # Move back up to pregrasp
-        #     control_interface.moveL(ur_pregrasp_in_louise, move_speed)
-
-        #     grasp_executed = True
+                ur3e.move_linear_to_tcp_pose(pregrasp_pose_in_ur3e)
+                ur3e.move_linear_to_tcp_pose(grasp_pose_in_ur3e)
+                gripper.close()
+                ur3e.move_linear_to_tcp_pose(pregrasp_pose_in_ur3e)
+                grasp_executed = True
 
         cv2.imshow(window_name, image)
         key = cv2.waitKey(10)

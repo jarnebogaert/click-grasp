@@ -9,25 +9,9 @@ channels:
   - conda-forge
 dependencies:
   - python=3.9
-  - pytorch
-  - cudatoolkit=11.3
-  - torchvision
+  - opencv
+  - scipy
   - pip
   - pip:
-    - numpy
-    - matplotlib
-    - scipy
-    - wandb
-    - stable-baselines3
-    - pytorch-lightning
-    - imageio
-    - albumentations
-    - timm
     - pytest
     - pre-commit
-    - ur_rtde
-    - git+https://github.com/tlpss/camera-toolkit.git
-    - git+https://github.com/airo-ugent/robotiq2F_tcp.git
-    - git+https://github.com/tlpss/keypoint-detection.git
-    - -e package/
-    # -e 'git+https://github.com/airo-ugent/airo-core@camera-toolkit#egg=<package-dir>&subdirectory=<package-dir>'[external]

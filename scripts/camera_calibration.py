@@ -57,11 +57,11 @@ def get_aruco_marker_poses(
 
     else:
         print("[WARNING] detected markers does not equal amount of rotation vectors weirdly")
-    if visualize:
-        frame = np.ascontiguousarray(frame)
-        # Draw the axes on the marker
-        for i in range(len(marker_ids)):
-            cv2.drawFrameAxes(frame, cam_matrix, np.zeros(4), rvecs[i], tvecs[i], 0.05)
+    # if visualize:
+    #     frame = np.ascontiguousarray(frame)
+    #     # Draw the axes on the marker
+    #     for i in range(len(marker_ids)):
+    #         cv2.drawFrameAxes(frame, cam_matrix, np.zeros(4), rvecs[i], tvecs[i], 0.05)
     return frame, translations, rotation_matrices, marker_ids
 
 
@@ -110,15 +110,14 @@ if __name__ == "__main__":
         start_time = time.time()
         image = zed.get_rgb_image()
         image = ImageConverter(image).image_in_opencv_format
-        image = (255 * image).astype(np.uint8)
 
         intrinsics_matrix = zed.intrinsics_matrix
         _, translations, rotations, _ = get_aruco_marker_poses(
-           image, intrinsics_matrix, 0.106, cv2.aruco.DICT_6X6_250, True
+           image, intrinsics_matrix, 0.1, cv2.aruco.DICT_6X6_250, True
         )
         image = draw_center_circle(image)
 
-        if rotations is not None:
+        if rotations:
             aruco_in_camera_transform = np.eye(4)
             aruco_in_camera_transform[:3, :3] = rotations[0]
             aruco_in_camera_transform[:3, 3] = translations[0]
