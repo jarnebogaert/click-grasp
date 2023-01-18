@@ -1,20 +1,21 @@
 import pickle
 import time
 from pathlib import Path
-from typing import Tuple 
+from typing import Tuple
+
 import cv2
 import numpy as np
 from airo_camera_toolkit.cameras.zed2i import Zed2i
-from airo_camera_toolkit.utils import ImageConverter
 from airo_camera_toolkit.reprojection import project_frame_to_image_plane
-import pyzed.sl as sl
+from airo_camera_toolkit.utils import ImageConverter
+
 
 def get_aruco_marker_poses(
-        frame: np.ndarray,
-        cam_matrix: np.ndarray,
-        aruco_marker_size: float,
-        aruco_dictionary_name: str,
-        visualize: bool = False,
+    frame: np.ndarray,
+    cam_matrix: np.ndarray,
+    aruco_marker_size: float,
+    aruco_dictionary_name: str,
+    visualize: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     this_aruco_dictionary = cv2.aruco.Dictionary_get(aruco_dictionary_name)
     this_aruco_parameters = cv2.aruco.DetectorParameters_create()
@@ -30,10 +31,17 @@ def get_aruco_marker_poses(
 
     # Refine the corners
     # cv2.aruco.refineDetectedMarkers(frame, board, corners, marker_ids, rejected)
-    termination_criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_COUNT, 100, 0.001) # max 100 iterations or 0.001m acc
-    search_window_size = (5, 5)  # multiply by 2 + 1 to get real search window size opencv will use (5x5) = (11x11) window
+    termination_criteria = (
+        cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_COUNT,
+        100,
+        0.001,
+    )  # max 100 iterations or 0.001m acc
+    search_window_size = (
+        5,
+        5,
+    )  # multiply by 2 + 1 to get real search window size opencv will use (5x5) = (11x11) window
     zero_zone = (-1, -1)  # none
-    corners = cv2.cornerSubPix(frame[:,:,0], corners[0], search_window_size, zero_zone, termination_criteria)
+    corners = cv2.cornerSubPix(frame[:, :, 0], corners[0], search_window_size, zero_zone, termination_criteria)
 
     # Get the rotation and translation vectors
     rvecs, tvecs, obj_points = cv2.aruco.estimatePoseSingleMarkers(corners, aruco_marker_size, cam_matrix, np.zeros(4))
@@ -75,16 +83,13 @@ def draw_center_circle(image) -> np.ndarray:
 
 
 def draw_world_axes(image, world_to_camera, camera_matrix):
-    project_points = np.array([
-        [0.0, 0.0, 0.0],
-        [1.0, 0.0, 0.0],
-        [-1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [0.0, -1.0, 0.0],
-        [0.0, 0.0, 1.0]
-    ])
+    project_points = np.array(
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]]
+    )
 
-    origin, x_pos, x_neg, y_pos, y_neg, z_pos = project_frame_to_image_plane(project_points, camera_matrix, world_to_camera).astype(int)
+    origin, x_pos, x_neg, y_pos, y_neg, z_pos = project_frame_to_image_plane(
+        project_points, camera_matrix, world_to_camera
+    ).astype(int)
     image = cv2.circle(image, origin, 10, (0, 255, 255), thickness=2)
     image = cv2.line(image, x_pos, origin, color=(0, 0, 255), thickness=2)
     image = cv2.line(image, x_neg, origin, color=(100, 100, 255), thickness=2)
@@ -113,7 +118,7 @@ if __name__ == "__main__":
 
         intrinsics_matrix = zed.intrinsics_matrix
         _, translations, rotations, _ = get_aruco_marker_poses(
-           image, intrinsics_matrix, 0.1, cv2.aruco.DICT_6X6_250, True
+            image, intrinsics_matrix, 0.1, cv2.aruco.DICT_6X6_250, True
         )
         image = draw_center_circle(image)
 

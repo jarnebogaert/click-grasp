@@ -6,14 +6,12 @@ from pathlib import Path
 import cv2
 import numpy as np
 from airo_camera_toolkit.cameras.zed2i import Zed2i
-from airo_camera_toolkit.utils import ImageConverter
 from airo_camera_toolkit.reprojection import reproject_to_frame_z_plane
-from airo_robots.manipulators.hardware.ur_rtde import UR_RTDE,  UR3E_CONFIG
+from airo_camera_toolkit.utils import ImageConverter
 from airo_robots.grippers.hardware.robotiq_2f85_tcp import Robotiq2F85
+from airo_robots.manipulators.hardware.ur_rtde import UR3E_CONFIG, UR_RTDE
 
 # from rtde_control import RTDEControlInterface
-from scipy.spatial.transform import Rotation as R
-import pyzed.sl as sl
 
 
 def load_saved_calibration():
@@ -70,7 +68,7 @@ def make_grasp_pose(clicked_points):
     return grasp_pose
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # noqa: C901
     if not os.path.exists(Path(__file__).parent / "marker.pickle"):
         print("Please run camera_calibration.py first.")
         sys.exit(0)
@@ -97,7 +95,6 @@ if __name__ == "__main__":
 
     ur3e.move_linear_to_tcp_pose(home_in_ur3e)
 
-    gripper.activate_gripper()
     gripper.open()
 
     zed = Zed2i(resolution=Zed2i.RESOLUTION_720, fps=30)
@@ -132,8 +129,10 @@ if __name__ == "__main__":
         if len(clicked_image_points) == 2:
             points_in_image = np.array(clicked_image_points)
             # points_in_world = reproject_to_frame_z_plane(points_in_image, intrinsics_matrix, world_to_camera)
-            points_in_world = reproject_to_frame_z_plane(points_in_image, intrinsics_matrix, np.linalg.inv(world_to_camera))
-        
+            points_in_world = reproject_to_frame_z_plane(
+                points_in_image, intrinsics_matrix, np.linalg.inv(world_to_camera)
+            )
+
             grasp_pose = make_grasp_pose(points_in_world)
             grasp_pose[2, -1] += 0.005
             grasp_pose_in_ur3e = world_to_ur3e @ grasp_pose
@@ -146,7 +145,7 @@ if __name__ == "__main__":
             image = draw_pose(image, pregrasp_pose, world_to_camera, intrinsics_matrix)
 
             if not grasp_executed:
-                cv2.imshow(window_name, image) # refresh image
+                cv2.imshow(window_name, image)  # refresh image
 
                 ur3e.move_linear_to_tcp_pose(pregrasp_pose_in_ur3e)
                 ur3e.move_linear_to_tcp_pose(grasp_pose_in_ur3e)
