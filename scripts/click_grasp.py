@@ -70,13 +70,6 @@ def make_grasp_pose(clicked_points):
     return grasp_pose
 
 
-def homogeneous_pose_to_position_and_rotvec(pose: np.ndarray) -> np.ndarray:
-    """converts a 4x4 homogeneous pose to [x,y,z, x_rot,y_rot,z_rot]"""
-    position = pose[:3, 3]
-    rpy = R.from_matrix(pose[:3, :3]).as_rotvec()
-    return np.concatenate((position, rpy))
-
-
 if __name__ == "__main__":
     if not os.path.exists(Path(__file__).parent / "marker.pickle"):
         print("Please run camera_calibration.py first.")
