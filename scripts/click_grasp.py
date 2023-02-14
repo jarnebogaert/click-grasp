@@ -9,9 +9,11 @@ from airo_camera_toolkit.cameras.zed2i import Zed2i
 from airo_camera_toolkit.reprojection import reproject_to_frame_z_plane
 from airo_camera_toolkit.utils import ImageConverter
 from airo_robots.grippers.hardware.robotiq_2f85_tcp import Robotiq2F85
-from airo_robots.manipulators.hardware.ur_rtde import UR3E_CONFIG, UR_RTDE
+from airo_robots.manipulators.hardware.ur_rtde import UR_RTDE
 
 # from rtde_control import RTDEControlInterface
+
+robot = "victor"
 
 
 def load_saved_calibration():
@@ -74,18 +76,27 @@ if __name__ == "__main__":  # noqa: C901
         sys.exit(0)
     world_to_camera = load_saved_calibration()
 
-    ip_louise = "10.42.0.163"
-    ur3e = UR_RTDE(ip_louise, UR3E_CONFIG)
+    if robot == "victor":
+        ip = "10.42.0.162"
+    elif robot == "louise":
+        ip = "10.42.0.163"
+    ur3e = UR_RTDE(ip, UR_RTDE.UR3E_CONFIG)
 
-    gripper = Robotiq2F85(ip_louise)
+    gripper = Robotiq2F85(ip)
 
     ur3e_in_world = np.identity(4)
-    ur3e_in_world[:3, -1] += [0.3, 0, 0]  # 30 cm positive along x from where the marker should be placed
+    if robot == "victor":
+        ur3e_in_world[:3, -1] -= [0.3, 0, 0]  # 30 cm negative along x from where the marker should be placed
+    elif robot == "louise":
+        ur3e_in_world[:3, -1] -= [0.3, 0, 0]  # 30 cm positive along x from where the marker should be placed
     world_to_ur3e = np.linalg.inv(ur3e_in_world)
     # move_speed = 0.1  # m /s
 
     home_ur3e = ur3e_in_world.copy()
-    home_ur3e[:3, -1] += [-0.15, -0.20, 0.2]
+    if robot == "victor":
+        home_ur3e[:3, -1] += [0.15, -0.20, 0.2]
+    elif robot == "louise":
+        home_ur3e[:3, -1] += [-0.15, -0.20, 0.2]
     X = np.array([1, 0, 0])
     Z = np.array([0, 0, -1])  # topdown
     Y = np.cross(Z, X)
